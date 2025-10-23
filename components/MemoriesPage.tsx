@@ -2,7 +2,6 @@ import React, { useState, FormEvent, ChangeEvent, useEffect } from 'react';
 import Layout from './Layout';
 import { useAppContext } from '../context/AppContext';
 import TerminalModal from './TerminalModal';
-import { GoogleGenAI, Modality } from '@google/genai';
 import { getMemories, saveMemories } from '../services/memoryService';
 import ErrorAlert from './ErrorAlert';
 
@@ -19,8 +18,8 @@ const fileToBase64 = (file: File): Promise<{ data: string; mimeType: string }> =
     reader.readAsDataURL(file);
     reader.onload = () => {
       const result = reader.result as string;
-      const [header, data] = result.split(',');
-      const mimeType = header.match(/:(.*?);/)?.[1] || file.type;
+      const [, data] = result.split(',');
+      const mimeType = result.match(/:(.*?);/)?.[1] || file.type;
       resolve({ data, mimeType });
     };
     reader.onerror = (error) => reject(error);
@@ -60,49 +59,27 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
         setIsSubmitting(true);
         try {
           setSubmitStatus('Generating AI artwork...');
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const { data: base64Data, mimeType } = await fileToBase64(photo);
 
-          const imagePart = {
-            inlineData: {
-              data: base64Data,
-              mimeType: mimeType,
-            },
-          };
-          const textPart = {
-            text: "Convert this image into a 3D Pixar-style portrait. Use the uploaded image as a reference for faces, poses, and lighting. Transform all people into Pixar or Disney-style 3D animated characters, keeping their facial features, skin tones, and expressions recognizable but stylized. The final image should have soft, cinematic warm lighting, smooth textures, and detailed, glossy eyes, resembling a high-quality 8K still frame from a Pixar movie. Maintain emotional realism and avoid cartoonish exaggeration. Use a shallow depth of field and soft background blur to enhance the cinematic feel, without drastically changing the original setting.",
-          };
-          
-          const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: { parts: [imagePart, textPart] },
-            config: {
-                responseModalities: [Modality.IMAGE],
-            },
+          const apiResponse = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base64Data, mimeType }),
           });
-    
-          let imagePartFound = null;
-          const candidate = response.candidates?.[0];
-          if (candidate?.content?.parts) {
-            for (const part of candidate.content.parts) {
-              if (part.inlineData) {
-                imagePartFound = part;
-                break;
-              }
-            }
+
+          if (!apiResponse.ok) {
+            const errorData = await apiResponse.json();
+            throw new Error(errorData.error || 'Failed to generate image.');
           }
 
-          if (imagePartFound?.inlineData) {
-            const base64ImageBytes: string = imagePartFound.inlineData.data;
-            const generatedMimeType = imagePartFound.inlineData.mimeType || 'image/png';
-            const generatedImageUrl = `data:${generatedMimeType};base64,${base64ImageBytes}`;
-            
+          const { generatedImageUrl } = await apiResponse.json();
+
+          if (generatedImageUrl) {
             setSubmitStatus('Saving to the Memory Wall...');
             await onAddPost({ message, author, photoUrl: generatedImageUrl });
             onClose();
           } else {
-            console.error("Full API Response:", JSON.stringify(response, null, 2));
-            throw new Error('Could not extract the generated image from the API response.');
+            throw new Error('Could not get the generated image from the server.');
           }
         } catch (error) {
           console.error("Error creating memory:", error);
