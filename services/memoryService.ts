@@ -13,7 +13,8 @@ const handleApiResponse = async (response: Response, operation: string) => {
     try {
       // Try to parse a more specific error message from the API's JSON response.
       const errorBody = await response.json();
-      errorMessage = errorBody.error || `Failed during ${operation}.`;
+      // Using .message now to align with the new standardized API error response.
+      errorMessage = errorBody.message || `Failed during ${operation}.`;
     } catch (e) {
       // The response body wasn't JSON or was empty.
       console.error(`Could not parse error JSON during ${operation}.`);
@@ -22,6 +23,8 @@ const handleApiResponse = async (response: Response, operation: string) => {
     throw new Error(errorMessage);
   }
   // If the response is OK, parse and return the JSON body.
+  // This handles successful GET/POST requests that return data.
+  // For DELETE requests, it will correctly parse the { success: true } body.
   return response.json();
 };
 

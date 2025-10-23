@@ -188,26 +188,30 @@ const MemoriesPage: React.FC = () => {
       try {
         const response = await fetch('/api/status');
         const rawText = await response.text();
-        // Try parsing as JSON for structured info
+        
         try {
             const data = JSON.parse(rawText);
-            setDiagnosticResult(JSON.stringify(data, null, 2)); // Pretty print JSON
+            setDiagnosticResult(JSON.stringify(data, null, 2)); // Show full JSON for debugging
             if (response.ok && data.status === 'ok') {
                 setDbStatus('ok');
                 setDbErrorMessage(null);
             } else {
                 setDbStatus('error');
-                setDbErrorMessage(data.message || 'An unknown server error occurred.');
+                // More robustly extract the message from the backend.
+                const message = (data && typeof data.message === 'string')
+                    ? data.message
+                    : 'An unknown server error occurred. Check the details below.';
+                setDbErrorMessage(message);
             }
         } catch {
-            // If it's not JSON, show the raw text
+            // If the response is not valid JSON, it's an error.
             setDiagnosticResult(rawText);
             setDbStatus('error');
-            setDbErrorMessage('The server returned a non-JSON response. See details below.');
+            setDbErrorMessage('The server returned an invalid response. See details below.');
         }
       } catch (error) {
           setDbStatus('error');
-          const errorMessage = 'Network error: Failed to communicate with the server. Is the project deployed correctly?';
+          const errorMessage = 'Network error: Failed to communicate with the server. Is your project deployed and the API running?';
           setDbErrorMessage(errorMessage);
           setDiagnosticResult(JSON.stringify({ error: errorMessage, details: (error as Error).message }, null, 2));
       } finally {
