@@ -185,16 +185,21 @@ const MemoriesPage: React.FC = () => {
         const checkDbStatus = async () => {
             try {
                 const response = await fetch('/api/status');
+                // Read the JSON body regardless of the response status.
                 const data = await response.json();
+
                 if (response.ok && data.status === 'ok') {
                     setDbStatus('ok');
+                    setDbErrorMessage(null); // Clear any previous errors on success.
                 } else {
+                    // Handle HTTP error statuses (4xx, 5xx) where the body is valid JSON.
                     setDbStatus('error');
-                    setDbErrorMessage(data.message || 'Unknown connection error.');
+                    setDbErrorMessage(data.message || 'An unknown server error occurred. Check the Vercel logs.');
                 }
             } catch (error) {
+                // Handle network errors or cases where the response is not valid JSON.
                 setDbStatus('error');
-                setDbErrorMessage('Failed to reach the server to check database status.');
+                setDbErrorMessage('Failed to communicate with the server. Is the project deployed correctly?');
                 console.error('API status check failed:', error);
             }
         };
