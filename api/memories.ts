@@ -72,7 +72,15 @@ export default async function handler(req: Request) {
   // 5. Handle PUT requests (save memories)
   if (req.method === 'PUT') {
     try {
-      const memoriesToSave = JSON.stringify(await req.json());
+      const memoriesToSave = await req.text();
+
+      // Basic validation that we received something that looks like an array
+      if (!memoriesToSave.trim().startsWith('[') || !memoriesToSave.trim().endsWith(']')) {
+          return new Response(JSON.stringify({ error: 'Invalid payload format. Expected a JSON array.' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+          });
+      }
       
       // Use a more robust "upsert" operation (INSERT ON CONFLICT).
       // This atomically inserts a new record or updates the existing one.

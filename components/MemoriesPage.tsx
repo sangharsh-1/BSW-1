@@ -12,11 +12,45 @@ export interface Post {
   photoUrl: string;
 }
 
-const fileToBase64 = (file: File): Promise<string> =>
+const resizeImage = (file: File, maxWidth = 800, maxHeight = 800, quality = 0.8): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
+    reader.onload = (event) => {
+      if (!event.target?.result) {
+        return reject(new Error("Couldn't read file."));
+      }
+      const img = new Image();
+      img.src = event.target.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round(height * (maxWidth / width));
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round(width * (maxHeight / height));
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          return reject(new Error('Failed to get canvas context'));
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Convert to JPEG for better compression, which is ideal for photos.
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = (error) => reject(error);
+    };
     reader.onerror = (error) => reject(error);
   });
 
@@ -26,6 +60,7 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
     const [photo, setPhoto] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         // Clean up the blob URL when the component unmounts
@@ -37,8 +72,14 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
     }, [previewUrl]);
 
     const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
+      setError(null);
       if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
+        // Simple client-side validation for file size (e.g., 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+          setError('File is too large. Please select an image under 10MB.');
+          return;
+        }
         setPhoto(file);
         if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
@@ -51,14 +92,15 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
       e.preventDefault();
       if (message && author && photo) {
         setIsSubmitting(true);
+        setError(null);
         try {
-          const photoUrl = await fileToBase64(photo);
+          const photoUrl = await resizeImage(photo);
           await onAddPost({ message, author, photoUrl });
           onClose();
         } catch (error) {
           console.error("Error creating memory:", error);
           const errorMessage = error instanceof Error ? error.message : "Sorry, we couldn't create your memory. Please try again.";
-          alert(errorMessage);
+          setError(errorMessage);
         } finally {
           setIsSubmitting(false);
         }
@@ -75,10 +117,16 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     <p className="font-semibold text-gray-700">Saving to the Memory Wall...</p>
-                    <p className="text-sm text-gray-500">Please wait.</p>
+                    <p className="text-sm text-gray-500">This may take a moment.</p>
                 </div>
             )}
           <h2 className="text-2xl font-bold mb-6 text-gray-800 font-hero-serif">Add a Memory</h2>
+          {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                <strong className="font-bold">Oops! </strong>
+                <span className="block sm:inline">{error}</span>
+              </div>
+          )}
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Your Message</label>
@@ -95,7 +143,7 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
             </div>
             <div className="flex justify-end space-x-4">
               <button type="button" onClick={onClose} className="rounded-full px-6 py-2 text-gray-700 bg-gray-200 hover:bg-gray-300 transition-colors disabled:opacity-50" disabled={isSubmitting}>Cancel</button>
-              <button type="submit" className="rounded-full px-6 py-2 text-white bg-[#a1a5ff] hover:bg-opacity-90 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled={isSubmitting}>
+              <button type="submit" className="rounded-full px-6 py-2 text-white bg-[#a1a5ff] hover:bg-opacity-90 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled={isSubmitting || !!error}>
                 {isSubmitting ? 'Saving...' : 'Post'}
               </button>
             </div>
