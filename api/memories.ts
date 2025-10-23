@@ -74,12 +74,13 @@ export default async function handler(req: Request) {
     try {
       const memoriesToSave = JSON.stringify(await req.json());
       
-      // Use a transaction to delete old memories and insert the new ones.
-      // This is a simple "overwrite" operation.
-      await client.batch([
-        "DELETE FROM memories",
-        { sql: "INSERT INTO memories (id, content) VALUES (1, ?)", args: [memoriesToSave] }
-      ], 'write');
+      // Use a more robust "upsert" operation (INSERT ON CONFLICT).
+      // This atomically inserts a new record or updates the existing one.
+      const sql = `
+        INSERT INTO memories (id, content) VALUES (1, ?)
+        ON CONFLICT(id) DO UPDATE SET content = excluded.content;
+      `;
+      await client.execute({ sql, args: [memoriesToSave] });
 
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
@@ -93,7 +94,10 @@ export default async function handler(req: Request) {
       });
     }
   }
-
-  // 6. Handle any other HTTP methods
-  return new Response('Method Not Allowed', { status: 405 });
+  
+  // 6. Handle other HTTP methods
+  return new Response(JSON.stringify({ error: `Method ${req.method} Not Allowed` }), {
+    status: 405,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
