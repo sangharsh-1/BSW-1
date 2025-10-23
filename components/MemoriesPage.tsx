@@ -12,16 +12,11 @@ export interface Post {
   photoUrl: string;
 }
 
-const fileToBase64 = (file: File): Promise<{ data: string; mimeType: string }> =>
+const fileToBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => {
-      const result = reader.result as string;
-      const [, data] = result.split(',');
-      const mimeType = result.match(/:(.*?);/)?.[1] || file.type;
-      resolve({ data, mimeType });
-    };
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = (error) => reject(error);
   });
 
@@ -31,7 +26,6 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
     const [photo, setPhoto] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [submitStatus, setSubmitStatus] = useState('Creating your animated memory...');
 
     useEffect(() => {
         // Clean up the blob URL when the component unmounts
@@ -58,29 +52,9 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
       if (message && author && photo) {
         setIsSubmitting(true);
         try {
-          setSubmitStatus('Generating AI artwork...');
-          const { data: base64Data, mimeType } = await fileToBase64(photo);
-
-          const apiResponse = await fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ base64Data, mimeType }),
-          });
-
-          if (!apiResponse.ok) {
-            const errorData = await apiResponse.json();
-            throw new Error(errorData.error || 'Failed to generate image.');
-          }
-
-          const { generatedImageUrl } = await apiResponse.json();
-
-          if (generatedImageUrl) {
-            setSubmitStatus('Saving to the Memory Wall...');
-            await onAddPost({ message, author, photoUrl: generatedImageUrl });
-            onClose();
-          } else {
-            throw new Error('Could not get the generated image from the server.');
-          }
+          const photoUrl = await fileToBase64(photo);
+          await onAddPost({ message, author, photoUrl });
+          onClose();
         } catch (error) {
           console.error("Error creating memory:", error);
           const errorMessage = error instanceof Error ? error.message : "Sorry, we couldn't create your memory. Please try again.";
@@ -100,8 +74,8 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <p className="font-semibold text-gray-700">{submitStatus}</p>
-                    <p className="text-sm text-gray-500">This might take a moment.</p>
+                    <p className="font-semibold text-gray-700">Saving to the Memory Wall...</p>
+                    <p className="text-sm text-gray-500">Please wait.</p>
                 </div>
             )}
           <h2 className="text-2xl font-bold mb-6 text-gray-800 font-hero-serif">Add a Memory</h2>
@@ -117,13 +91,12 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
             <div className="mb-6">
                <label className="block text-sm font-medium text-gray-700 mb-1">Photo</label>
                <input type="file" accept="image/*" onChange={handlePhotoChange} className="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50" required disabled={isSubmitting}/>
-               <p className="mt-2 text-xs text-gray-500">Your photos are processed securely and are not stored or used for any other purpose.</p>
                {previewUrl && <img src={previewUrl} alt="Preview" className="mt-4 h-24 w-24 object-cover rounded-md shadow-md" />}
             </div>
             <div className="flex justify-end space-x-4">
               <button type="button" onClick={onClose} className="rounded-full px-6 py-2 text-gray-700 bg-gray-200 hover:bg-gray-300 transition-colors disabled:opacity-50" disabled={isSubmitting}>Cancel</button>
               <button type="submit" className="rounded-full px-6 py-2 text-white bg-[#a1a5ff] hover:bg-opacity-90 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled={isSubmitting}>
-                {isSubmitting ? 'Creating...' : 'Post'}
+                {isSubmitting ? 'Saving...' : 'Post'}
               </button>
             </div>
           </form>
@@ -347,11 +320,11 @@ const MemoriesPage: React.FC = () => {
                                         <div key={post.id} className={`flex w-full ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
                                             <div className="group relative bg-white rounded-xl shadow-lg overflow-hidden flex w-full md:w-5/6 lg:w-[70%] h-[9rem] transition-shadow hover:shadow-2xl">
                                                 {/* Left side: Photo */}
-                                                <div className="w-1/3 flex-shrink-0 bg-black">
+                                                <div className="w-1/3 flex-shrink-0 bg-gray-200 flex items-center justify-center">
                                                     <img 
                                                         src={post.photoUrl} 
                                                         alt="Memory" 
-                                                        className="w-full h-full object-contain"
+                                                        className="w-full h-full object-cover"
                                                     />
                                                 </div>
 
