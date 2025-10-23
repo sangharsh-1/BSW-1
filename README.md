@@ -6,49 +6,15 @@ This is a multi-page, interactive, and emotional birthday website created as a s
 
 - **Interactive Pages**: Multiple themed pages including a landing page, a memory wall, and a final video surprise.
 - **Photo Memories**: Users can upload a photo and a message to share on the Memory Wall.
-- **Persistent Storage**: The Memory Wall's data is securely stored using a [Turso](https://turso.tech/) database, accessed via a secure backend API.
+- **Local Storage**: The Memory Wall's data is saved directly in your web browser's local storage, meaning your memories persist between visits and the app works entirely offline.
 - **Editable "About Me" Page**: A fun, doodle-themed page with content that can be edited and saved directly in the browser.
 - **Recovery "Game"**: A terminal-based minigame to "recover" a lost wish and unlock the final page.
 - **Dynamic & Themed UI**: Features animated backgrounds, custom fonts, and a responsive design that adapts to different pages.
 
 ---
 
-## Deployment Guide (Vercel)
+## How to Run
 
-This project is optimized for a zero-install, drag-and-drop deployment on [Vercel](https://vercel.com/).
+This project is designed to run directly in the browser without a build step or local server. 
 
-### Step 1: Push to GitHub
-
-Push the entire project folder to a new repository on your GitHub account.
-
-### Step 2: Create a Vercel Project
-
-1.  Log in to your Vercel account.
-2.  Click "Add New..." -> "Project".
-3.  Import the GitHub repository you just created.
-4.  Vercel will automatically detect the project structure. You do not need to change any build settings.
-
-### Step 3: Configure Environment Variables
-
-This is the most important step. Your application requires two secret keys to function correctly.
-
-1.  In your Vercel project dashboard, go to the **Settings** tab.
-2.  Click on **Environment Variables**.
-3.  Add the following two variables:
-
-| Variable Name         | Value                                                              | Description                                                                                             |
-| --------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `TURSO_DATABASE_URL`  | `libsql://your-database-name-username.turso.io`                    | **Required for the Database.** The connection URL for your Turso database.                               |
-| `TURSO_AUTH_TOKEN`    | `Your_Turso_Database_Auth_Token`                                   | **Required for the Database.** The secret authentication token for your Turso database.                  |
-
-### Step 4: Deploy
-
-After adding the environment variables, navigate to the **Deployments** tab in Vercel and trigger a new deployment. Your site will be live!
-
----
-
-## Local Development
-
-This project is designed to run directly in the browser without a build step or local server. Simply open the `index.html` file in your web browser to view the application.
-
-**Note**: For the database features to work, the application must be deployed, as it relies on the Vercel backend function and the configured environment variables.
+Simply open the `index.html` file in your web browser to view and use the application. All features, including the Memory Wall, are fully functional locally.

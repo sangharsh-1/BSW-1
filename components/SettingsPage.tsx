@@ -22,19 +22,16 @@ const SettingsPage: React.FC = () => {
     if (window.confirm("Are you sure you want to permanently delete ALL memories? This action cannot be undone.")) {
       setIsResetting(true);
       try {
-        // Step 1: Call the new, efficient backend endpoint to clear the database.
+        // The service function now handles all logic for clearing storage.
         await resetAllMemories();
-
-        // Step 2: Clear the local cache to ensure the UI reflects the empty state.
-        localStorage.removeItem('memoriesCache');
         
         alert("All memories have been successfully cleared. Redirecting to the Memory Wall...");
         
-        // Step 3: Navigate to the memory wall to show the now-empty wall.
+        // Navigate to the memory wall to show the now-empty wall.
         navigateWithTransition('/memories');
       } catch (error) {
         console.error("Failed to reset memories:", error);
-        alert("Could not clear memories from the server. Please try again.");
+        alert("Could not clear memories from local storage. Please try again.");
       } finally {
         setIsResetting(false);
       }
@@ -59,7 +56,7 @@ const SettingsPage: React.FC = () => {
           <SettingsSection title="Memory Lane Settings">
             <div>
               <p className="text-gray-600 mb-4">
-                This will permanently delete all memories from the Memory Wall for everyone. This action cannot be undone.
+                This will permanently delete all memories from the Memory Wall for everyone using this browser. This action cannot be undone.
               </p>
               <button
                 onClick={handleResetMemories}

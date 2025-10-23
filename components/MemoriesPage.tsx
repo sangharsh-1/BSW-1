@@ -1,9 +1,9 @@
 import React, { useState, FormEvent, ChangeEvent, useEffect } from 'react';
 import Layout from './Layout';
 import { useAppContext } from '../context/AppContext';
-import TerminalModal from './TerminalModal';
-import { getMemories, addMemory, deleteMemory } from '../services/memoryService';
+import { getMemories, addMemory } from '../services/memoryService';
 import ErrorAlert from './ErrorAlert';
+import TerminalModal from './TerminalModal';
 
 export interface Post {
   id: number;
@@ -11,8 +11,6 @@ export interface Post {
   author: string;
   photoUrl: string;
 }
-
-type DbStatus = 'checking' | 'ok' | 'error';
 
 const resizeImage = (file: File, maxWidth = 800, maxHeight = 800, quality = 0.8): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -156,262 +154,68 @@ const PostModal: React.FC<{ onClose: () => void; onAddPost: (post: Omit<Post, 'i
 };
 
 const MemoriesPage: React.FC = () => {
-    const { navigateWithTransition, setShowNavToggle } = useAppContext();
+    const { setShowNavToggle, navigateWithTransition } = useAppContext();
     const [posts, setPosts] = useState<Post[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isTerminalOpen, setIsTerminalOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    const [isSyncing, setIsSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [showError, setShowError] = useState(false);
-    const [postToDelete, setPostToDelete] = useState<Post | null>(null);
-    const [dbStatus, setDbStatus] = useState<DbStatus>('checking');
-    const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
-    const [diagnosticResult, setDiagnosticResult] = useState<string | null>(null);
-    const [isTestingConnection, setIsTestingConnection] = useState(false);
-
-    const CACHE_KEY = 'memoriesCache';
-
-    const updateCache = (postsToCache: Post[]) => {
-      try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(postsToCache));
-      } catch (error) {
-        console.error("Failed to update cache. Local storage might be full or corrupted.", error);
-        localStorage.removeItem(CACHE_KEY);
-      }
-    };
-    
-    const runDiagnosticTest = async () => {
-      setIsTestingConnection(true);
-      setDiagnosticResult(null);
-      setDbStatus('checking');
-      try {
-        const response = await fetch('/api/status');
-        const rawText = await response.text();
-        
-        try {
-            const data = JSON.parse(rawText);
-            setDiagnosticResult(JSON.stringify(data, null, 2)); // Show full JSON for debugging
-            if (response.ok && data.status === 'ok') {
-                setDbStatus('ok');
-                setDbErrorMessage(null);
-            } else {
-                setDbStatus('error');
-                // More robustly extract the message from the backend.
-                const message = (data && typeof data.message === 'string')
-                    ? data.message
-                    : 'An unknown server error occurred. Check the details below.';
-                setDbErrorMessage(message);
-            }
-        } catch {
-            // If the response is not valid JSON, it's an error.
-            setDiagnosticResult(rawText);
-            setDbStatus('error');
-            setDbErrorMessage('The server returned an invalid response. See details below.');
-        }
-      } catch (error) {
-          setDbStatus('error');
-          const errorMessage = 'Network error: Failed to communicate with the server. Is your project deployed and the API running?';
-          setDbErrorMessage(errorMessage);
-          setDiagnosticResult(JSON.stringify({ error: errorMessage, details: (error as Error).message }, null, 2));
-      } finally {
-        setIsTestingConnection(false);
-      }
-    };
-
+    const [showTerminal, setShowTerminal] = useState(false);
 
     useEffect(() => {
         setShowNavToggle(true);
-        runDiagnosticTest(); // Initial check on page load
-    }, [setShowNavToggle]);
-
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setShowError(true);
-        }, 4000);
-        return () => clearTimeout(timer);
-    }, []);
-
-    useEffect(() => {
-        const loadAndFetchPosts = async () => {
+        const loadPosts = async () => {
             setIsLoading(true);
-            let hasCache = false;
-
-            try {
-                const cachedData = localStorage.getItem(CACHE_KEY);
-                if (cachedData) {
-                    const cachedPosts: Post[] = JSON.parse(cachedData);
-                    setPosts(cachedPosts.sort((a, b) => b.id - a.id));
-                    hasCache = true;
-                }
-            } catch (error) {
-                console.error("Failed to load memories from cache:", error);
-                localStorage.removeItem(CACHE_KEY);
-            }
-            
-            if (hasCache) setIsLoading(false);
-            setIsSyncing(true);
-
             try {
                 const memories = await getMemories();
-                const sortedMemories = memories.sort((a, b) => b.id - a.id);
-                setPosts(sortedMemories);
-                updateCache(sortedMemories);
-                setError(null);
-            } catch (error) {
-                console.error("Failed to load memories from the cloud:", error);
-                if (!hasCache) {
-                   setError("Failed to fetch memories. The memory wall is currently unavailable. Please check your internet connection and try again later.");
-                }
+                setPosts(memories);
+            } catch (e) {
+                console.error("Failed to load memories:", e);
+                setError("Could not load memories. Your browser's storage might be disabled or full.");
             } finally {
                 setIsLoading(false);
-                setIsSyncing(false);
             }
         };
 
-        if (dbStatus === 'ok') {
-            loadAndFetchPosts();
-        } else if (dbStatus === 'error') {
-            setIsLoading(false);
-            setError("Cannot fetch memories. Waiting for database connection.");
-        }
-    }, [dbStatus]);
+        loadPosts();
+    }, [setShowNavToggle]);
 
     const addPost = async (postData: Omit<Post, 'id'>) => {
-        const tempId = -Date.now();
-        const tempPost: Post = { ...postData, id: tempId };
-        setPosts(currentPosts => [tempPost, ...currentPosts]);
-
         try {
             const savedPost = await addMemory(postData);
-            setPosts(currentPosts => {
-                const newPosts = currentPosts.map(p => p.id === tempId ? savedPost : p);
-                updateCache(newPosts);
-                return newPosts;
-            });
+            setPosts(currentPosts => [savedPost, ...currentPosts]);
         } catch (error) {
-            console.error("Failed to save post to cloud:", error);
-            setPosts(currentPosts => currentPosts.filter(p => p.id !== tempId));
-            if (error instanceof Error && (error.message.includes("413") || error.message.includes("too large"))) {
-              throw new Error("The uploaded image is too large. Please try a smaller file.");
+            console.error("Failed to save post to localStorage:", error);
+            if (error instanceof Error && error.message.includes("is too large")) {
+                throw new Error("The uploaded image is too large. Please try a smaller file.");
             }
-            throw new Error("Failed to save your memory to the cloud. Please try again.");
+            throw new Error("Failed to save your memory. Please check browser permissions and try again.");
         }
-    };
-
-    const deletePost = async (id: number) => {
-      const originalPosts = [...posts];
-      const newPosts = posts.filter(post => post.id !== id);
-      setPosts(newPosts);
-
-      try {
-        await deleteMemory(id);
-        updateCache(newPosts);
-      } catch(error) {
-        console.error("Failed to delete memory from cloud:", error);
-        alert('Could not delete the memory from the server. The memory has been restored.');
-        setPosts(originalPosts);
-      }
     };
 
     const handleTerminalSuccess = () => {
-      setIsTerminalOpen(false);
-      navigateWithTransition('/final-video');
+        setShowTerminal(false);
+        navigateWithTransition('/final-video');
     };
-
+    
     return (
         <Layout isTerminal={true} noScanlines={true} bgOverride="bg-[linear-gradient(to_bottom_right,#fde047,#fb7185,#2dd4bf,#c084fc)]">
             {isModalOpen && <PostModal onClose={() => setIsModalOpen(false)} onAddPost={addPost} />}
-            {isTerminalOpen && <TerminalModal onClose={() => setIsTerminalOpen(false)} onSuccess={handleTerminalSuccess} />}
+            {showTerminal && <TerminalModal onSuccess={handleTerminalSuccess} onClose={() => setShowTerminal(false)} />}
             
-            {postToDelete && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[100] p-4 animate-fadeIn">
-                  <div className="bg-white/90 backdrop-blur-xl p-8 rounded-2xl shadow-2xl w-full max-w-sm text-center">
-                    <h2 className="text-xl font-bold mb-4 text-gray-800 font-hero-serif">Delete Memory?</h2>
-                    <p className="text-gray-600 mb-6">
-                      Are you sure you want to delete the memory from "<strong>{postToDelete.author}</strong>"? This action is permanent.
-                    </p>
-                    <div className="flex justify-center space-x-4">
-                      <button onClick={() => setPostToDelete(null)} className="rounded-full px-6 py-2 text-gray-700 bg-gray-200 hover:bg-gray-300 transition-colors">
-                        Cancel
-                      </button>
-                      <button 
-                        onClick={() => {
-                          deletePost(postToDelete.id);
-                          setPostToDelete(null);
-                        }} 
-                        className="rounded-full px-6 py-2 text-white bg-red-600 hover:bg-red-700 transition-colors shadow-lg"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-            )}
-
             <div className="min-h-screen p-4 sm:p-8 flex flex-col">
                 <header className="text-center mb-8 animate-fadeIn">
                     <div className="inline-block relative">
                         <h1 className="font-hero-serif text-5xl sm:text-7xl font-extrabold text-white tracking-tight" style={{textShadow: '0 4px 10px rgba(0,0,0,0.3)'}}>
                             Memory Wall
                         </h1>
-                        {isSyncing && !isLoading && (
-                            <div className="absolute -top-2 -right-32 flex items-center text-sm text-white/80 bg-white/10 backdrop-blur-sm px-3 py-1 rounded-full animate-fadeIn">
-                                <svg className="animate-spin h-4 w-4 text-white mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Syncing...
-                            </div>
-                        )}
                     </div>
-
-                    <div className="mt-4 max-w-3xl mx-auto">
-                        <div className={`p-4 rounded-lg animate-fadeIn text-white transition-all duration-300 ${
-                            dbStatus === 'ok' ? 'bg-green-800/50' :
-                            dbStatus === 'checking' ? 'bg-blue-800/50' : 'bg-red-800/50'
-                        }`}>
-                            <p className="font-bold flex items-center justify-center">
-                                {dbStatus === 'ok' && <span className="w-3 h-3 bg-green-400 rounded-full mr-2"></span>}
-                                {dbStatus === 'checking' && <span className="w-3 h-3 bg-blue-400 rounded-full mr-2 animate-pulse"></span>}
-                                {dbStatus === 'error' && <span className="w-3 h-3 bg-red-400 rounded-full mr-2"></span>}
-                                Database Status: <span className="capitalize ml-1">{dbStatus}</span>
-                            </p>
-                             {dbStatus !== 'ok' && (
-                                <div className="text-center text-sm mt-2">
-                                    <p>{dbStatus === 'checking' ? 'Attempting to connect...' : dbErrorMessage}</p>
-                                    {dbStatus === 'error' && (
-                                        <div className="mt-4">
-                                            <button 
-                                                onClick={runDiagnosticTest} 
-                                                disabled={isTestingConnection}
-                                                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white font-semibold rounded-lg shadow-md transition-colors disabled:bg-white/10 disabled:cursor-wait">
-                                                {isTestingConnection ? 'Testing...' : 'Run Diagnostics'}
-                                            </button>
-                                        </div>
-                                    )}
-                                    {diagnosticResult && (
-                                        <div className="mt-4 text-left">
-                                            <p className="font-bold mb-1">Server Response:</p>
-                                            <pre className="text-xs bg-black/30 p-3 rounded-md overflow-x-auto">
-                                                <code>{diagnosticResult}</code>
-                                            </pre>
-                                            <p className="text-xs mt-2">This is the exact response from the server. Check this message against your Vercel Environment Variables.</p>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
                     <p className="mt-4 max-w-2xl mx-auto text-lg sm:text-xl text-white/90">
                         A collection of beautiful moments and heartfelt messages, shared by friends.
                     </p>
                     <div className="mt-6 flex justify-center gap-4">
                         <button
                             onClick={() => setIsModalOpen(true)}
-                            disabled={dbStatus !== 'ok'}
-                            className="rounded-full px-8 py-3 bg-white text-gray-800 font-semibold shadow-2xl hover:scale-105 hover:bg-gray-100 transition-all duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100"
+                            className="rounded-full px-8 py-3 bg-white text-gray-800 font-semibold shadow-2xl hover:scale-105 hover:bg-gray-100 transition-all duration-300"
                         >
                             Add Your Memory
                         </button>
@@ -426,11 +230,11 @@ const MemoriesPage: React.FC = () => {
                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                </svg>
-                               Waiting for database connection...
+                               Loading memories...
                             </div>
                         ) : error ? (
                             <div className="text-center text-white h-full min-h-[40vh] flex flex-col justify-center items-center bg-red-900/30 rounded-2xl p-4">
-                                <p className="text-2xl font-semibold mb-2">Connection Error</p>
+                                <p className="text-2xl font-semibold mb-2">Loading Error</p>
                                 <p className="max-w-md">{error}</p>
                             </div>
                         ) : posts.length === 0 ? (
@@ -457,15 +261,6 @@ const MemoriesPage: React.FC = () => {
                                                     <p className="text-gray-700 text-lg leading-relaxed mb-4 flex-grow font-doodle">"{post.message}"</p>
                                                     <p className="text-right text-gray-800 font-accent text-xl mt-auto flex-shrink-0">- {post.author}</p>
                                                 </div>
-                                                <button 
-                                                    onClick={() => setPostToDelete(post)} 
-                                                    className="absolute top-2 right-2 bg-red-500/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 z-10"
-                                                    aria-label="Delete memory"
-                                                >
-                                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                  </svg>
-                                                </button>
                                             </div>
                                         </div>
                                     );
@@ -475,7 +270,9 @@ const MemoriesPage: React.FC = () => {
                     </div>
                 </main>
             </div>
-            {showError && <ErrorAlert onFixClick={() => setIsTerminalOpen(true)} />}
+            
+            {/* This error alert is intentionally part of the user experience */}
+            <ErrorAlert onFixClick={() => setShowTerminal(true)} />
         </Layout>
     );
 };
