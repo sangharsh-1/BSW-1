@@ -167,6 +167,8 @@ const MemoriesPage: React.FC = () => {
     const [postToDelete, setPostToDelete] = useState<Post | null>(null);
     const [dbStatus, setDbStatus] = useState<DbStatus>('checking');
     const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
+    const [diagnosticResult, setDiagnosticResult] = useState<string | null>(null);
+    const [isTestingConnection, setIsTestingConnection] = useState(false);
 
     const CACHE_KEY = 'memoriesCache';
 
@@ -178,32 +180,45 @@ const MemoriesPage: React.FC = () => {
         localStorage.removeItem(CACHE_KEY);
       }
     };
+    
+    const runDiagnosticTest = async () => {
+      setIsTestingConnection(true);
+      setDiagnosticResult(null);
+      setDbStatus('checking');
+      try {
+        const response = await fetch('/api/status');
+        const rawText = await response.text();
+        // Try parsing as JSON for structured info
+        try {
+            const data = JSON.parse(rawText);
+            setDiagnosticResult(JSON.stringify(data, null, 2)); // Pretty print JSON
+            if (response.ok && data.status === 'ok') {
+                setDbStatus('ok');
+                setDbErrorMessage(null);
+            } else {
+                setDbStatus('error');
+                setDbErrorMessage(data.message || 'An unknown server error occurred.');
+            }
+        } catch {
+            // If it's not JSON, show the raw text
+            setDiagnosticResult(rawText);
+            setDbStatus('error');
+            setDbErrorMessage('The server returned a non-JSON response. See details below.');
+        }
+      } catch (error) {
+          setDbStatus('error');
+          const errorMessage = 'Network error: Failed to communicate with the server. Is the project deployed correctly?';
+          setDbErrorMessage(errorMessage);
+          setDiagnosticResult(JSON.stringify({ error: errorMessage, details: (error as Error).message }, null, 2));
+      } finally {
+        setIsTestingConnection(false);
+      }
+    };
+
 
     useEffect(() => {
         setShowNavToggle(true);
-
-        const checkDbStatus = async () => {
-            try {
-                const response = await fetch('/api/status');
-                // Read the JSON body regardless of the response status.
-                const data = await response.json();
-
-                if (response.ok && data.status === 'ok') {
-                    setDbStatus('ok');
-                    setDbErrorMessage(null); // Clear any previous errors on success.
-                } else {
-                    // Handle HTTP error statuses (4xx, 5xx) where the body is valid JSON.
-                    setDbStatus('error');
-                    setDbErrorMessage(data.message || 'An unknown server error occurred. Check the Vercel logs.');
-                }
-            } catch (error) {
-                // Handle network errors or cases where the response is not valid JSON.
-                setDbStatus('error');
-                setDbErrorMessage('Failed to communicate with the server. Is the project deployed correctly?');
-                console.error('API status check failed:', error);
-            }
-        };
-        checkDbStatus();
+        runDiagnosticTest(); // Initial check on page load
     }, [setShowNavToggle]);
 
     useEffect(() => {
@@ -358,10 +373,28 @@ const MemoriesPage: React.FC = () => {
                                 {dbStatus === 'error' && <span className="w-3 h-3 bg-red-400 rounded-full mr-2"></span>}
                                 Database Status: <span className="capitalize ml-1">{dbStatus}</span>
                             </p>
-                            {dbStatus !== 'ok' && (
+                             {dbStatus !== 'ok' && (
                                 <div className="text-center text-sm mt-2">
-                                    <p>{dbStatus === 'checking' ? 'Attempting to connect to the database...' : dbErrorMessage}</p>
-                                    {dbStatus === 'error' && <p className="text-xs mt-2 font-mono bg-black/20 p-2 rounded">Please ensure `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are set correctly in your Vercel project settings and redeploy.</p>}
+                                    <p>{dbStatus === 'checking' ? 'Attempting to connect...' : dbErrorMessage}</p>
+                                    {dbStatus === 'error' && (
+                                        <div className="mt-4">
+                                            <button 
+                                                onClick={runDiagnosticTest} 
+                                                disabled={isTestingConnection}
+                                                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white font-semibold rounded-lg shadow-md transition-colors disabled:bg-white/10 disabled:cursor-wait">
+                                                {isTestingConnection ? 'Testing...' : 'Run Diagnostics'}
+                                            </button>
+                                        </div>
+                                    )}
+                                    {diagnosticResult && (
+                                        <div className="mt-4 text-left">
+                                            <p className="font-bold mb-1">Server Response:</p>
+                                            <pre className="text-xs bg-black/30 p-3 rounded-md overflow-x-auto">
+                                                <code>{diagnosticResult}</code>
+                                            </pre>
+                                            <p className="text-xs mt-2">This is the exact response from the server. Check this message against your Vercel Environment Variables.</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
