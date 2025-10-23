@@ -112,9 +112,28 @@ export default async function handler(req: Request) {
         });
     }
   } catch (e: any) {
-    console.error("API Error:", e);
-    return new Response(JSON.stringify({ error: e.message || 'An internal server error occurred.' }), {
-      status: 500,
+    console.error("[API_ERROR]", e);
+
+    let status = 500;
+    let message = 'An internal server error occurred.';
+
+    if (e.message) {
+      if (e.message.includes('LIBSQL_AUTH_INVALID')) {
+        status = 401; // Unauthorized
+        message = 'Database authentication failed. The provided TURSO_AUTH_TOKEN is invalid or has expired. Please check your Vercel environment variables.';
+      } else if (e.message.includes('not found')) { // e.g., database not found
+        status = 404;
+        message = 'Database not found. Please verify the TURSO_DATABASE_URL is correct.';
+      } else if (e.code === 'SQLITE_CONSTRAINT') { // e.g., schema mismatch
+        status = 409; // Conflict
+        message = `Database constraint error: ${e.message}. This could indicate a schema mismatch.`;
+      } else {
+        message = `A server error occurred: ${e.message}`;
+      }
+    }
+
+    return new Response(JSON.stringify({ error: message }), {
+      status: status,
       headers: { 'Content-Type': 'application/json' },
     });
   }

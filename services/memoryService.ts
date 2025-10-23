@@ -3,17 +3,37 @@ import { Post } from '../components/MemoriesPage';
 const API_ENDPOINT = '/api/memories';
 
 /**
+ * A helper function to process API responses and throw detailed errors.
+ * @param response The fetch Response object.
+ * @param operation A string describing the operation (e.g., 'fetching memories').
+ */
+const handleApiResponse = async (response: Response, operation: string) => {
+  if (!response.ok) {
+    let errorMessage = `HTTP error! status: ${response.status}`;
+    try {
+      // Try to parse a more specific error message from the API's JSON response.
+      const errorBody = await response.json();
+      errorMessage = errorBody.error || `Failed during ${operation}.`;
+    } catch (e) {
+      // The response body wasn't JSON or was empty.
+      console.error(`Could not parse error JSON during ${operation}.`);
+    }
+    // Throw an error with the detailed message.
+    throw new Error(errorMessage);
+  }
+  // If the response is OK, parse and return the JSON body.
+  return response.json();
+};
+
+
+/**
  * Fetches all memories from the backend API.
  * @returns A promise that resolves to an array of Post objects.
  */
 export const getMemories = async (): Promise<Post[]> => {
   try {
     const response = await fetch(API_ENDPOINT);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
+    const data = await handleApiResponse(response, 'fetching memories');
     return Array.isArray(data) ? data : [];
   } catch (error) {
     console.error("Could not fetch memories from the API:", error);
@@ -33,13 +53,7 @@ export const addMemory = async (post: Omit<Post, 'id'>): Promise<Post> => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(post),
         });
-        if (!response.ok) {
-            const errorBody = await response.text();
-            console.error('API Error Response:', errorBody);
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        // The API now returns the fully created post object.
-        return await response.json();
+        return await handleApiResponse(response, 'adding memory');
     } catch (error) {
         console.error("Could not add memory via the API:", error);
         throw error;
@@ -55,9 +69,7 @@ export const deleteMemory = async (id: number): Promise<void> => {
         const response = await fetch(`${API_ENDPOINT}?id=${id}`, {
             method: 'DELETE',
         });
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        await handleApiResponse(response, 'deleting memory');
     } catch (error) {
         console.error("Could not delete memory via the API:", error);
         throw error;
@@ -72,9 +84,7 @@ export const resetAllMemories = async (): Promise<void> => {
         const response = await fetch(API_ENDPOINT, {
             method: 'DELETE',
         });
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        await handleApiResponse(response, 'resetting all memories');
     } catch (error) {
         console.error("Could not reset all memories via the API:", error);
         throw error;
