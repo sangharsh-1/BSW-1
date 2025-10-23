@@ -1,0 +1,14 @@
+{
+  "name": "b-s-w-with-turso-backend",
+  "version": "1.0.0",
+  "description": "Birthday Surprise Website with a Turso backend.",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Run your frontend dev server command here'",
+    "build": "echo 'Run your frontend build command here'"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.6.0"
+  },
+  "devDependencies": {}
+}
