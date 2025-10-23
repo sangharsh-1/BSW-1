@@ -69,7 +69,7 @@ export default async function handler(req: Request) {
       }
     }
 
-    if (imagePartFound?.inlineData) {
+    if (imagePartFound?.inlineData?.data) {
       const base64ImageBytes: string = imagePartFound.inlineData.data;
       const generatedMimeType = imagePartFound.inlineData.mimeType || 'image/png';
       const generatedImageUrl = `data:${generatedMimeType};base64,${base64ImageBytes}`;
