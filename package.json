@@ -4,11 +4,10 @@
   "description": "Birthday Surprise Website with a Turso backend.",
   "private": true,
   "scripts": {
-    "dev": "echo 'Run your frontend dev server command here'",
-    "build": "echo 'Run your frontend build command here'"
+    "dev": "echo 'No dev server needed'",
+    "build": "echo 'No build step needed'"
   },
   "dependencies": {
     "@libsql/client": "^0.6.0"
-  },
-  "devDependencies": {}
+  }
 }
