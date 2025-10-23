@@ -2,7 +2,7 @@ import React, { useState, FormEvent, ChangeEvent, useEffect } from 'react';
 import Layout from './Layout';
 import { useAppContext } from '../context/AppContext';
 import TerminalModal from './TerminalModal';
-import { getMemories, saveMemories } from '../services/memoryService';
+import { getMemories, addMemory, deleteMemory } from '../services/memoryService';
 import ErrorAlert from './ErrorAlert';
 
 export interface Post {
@@ -11,6 +11,8 @@ export interface Post {
   author: string;
   photoUrl: string;
 }
+
+type DbStatus = 'checking' | 'ok' | 'error';
 
 const resizeImage = (file: File, maxWidth = 800, maxHeight = 800, quality = 0.8): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -163,15 +165,14 @@ const MemoriesPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [showError, setShowError] = useState(false);
     const [postToDelete, setPostToDelete] = useState<Post | null>(null);
+    const [dbStatus, setDbStatus] = useState<DbStatus>('checking');
+    const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
+
     const CACHE_KEY = 'memoriesCache';
 
     const updateCache = (postsToCache: Post[]) => {
       try {
-        const lightPosts = postsToCache.map(p => ({
-          ...p,
-          photoUrl: p.photoUrl.startsWith('data:image') ? '' : p.photoUrl,
-        }));
-        localStorage.setItem(CACHE_KEY, JSON.stringify(lightPosts));
+        localStorage.setItem(CACHE_KEY, JSON.stringify(postsToCache));
       } catch (error) {
         console.error("Failed to update cache. Local storage might be full or corrupted.", error);
         localStorage.removeItem(CACHE_KEY);
@@ -180,6 +181,24 @@ const MemoriesPage: React.FC = () => {
 
     useEffect(() => {
         setShowNavToggle(true);
+
+        const checkDbStatus = async () => {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                if (response.ok && data.status === 'ok') {
+                    setDbStatus('ok');
+                } else {
+                    setDbStatus('error');
+                    setDbErrorMessage(data.message || 'Unknown connection error.');
+                }
+            } catch (error) {
+                setDbStatus('error');
+                setDbErrorMessage('Failed to reach the server to check database status.');
+                console.error('API status check failed:', error);
+            }
+        };
+        checkDbStatus();
     }, [setShowNavToggle]);
 
     useEffect(() => {
@@ -191,43 +210,33 @@ const MemoriesPage: React.FC = () => {
 
     useEffect(() => {
         const loadAndFetchPosts = async () => {
-            const isReset = sessionStorage.getItem('memoriesReset') === 'true';
-            if (isReset) {
-                sessionStorage.removeItem('memoriesReset');
-                localStorage.setItem(CACHE_KEY, '[]');
-                setPosts([]);
-            }
-
             setIsLoading(true);
             let hasCache = false;
-            
-            if (!isReset) {
-                try {
-                    const cachedData = localStorage.getItem(CACHE_KEY);
-                    if (cachedData) {
-                        const cachedPosts: Post[] = JSON.parse(cachedData);
-                        setPosts(cachedPosts.sort((a, b) => b.id - a.id));
-                        setIsLoading(false);
-                        hasCache = true;
-                    }
-                } catch (error) {
-                    console.error("Failed to load memories from cache:", error);
-                    localStorage.removeItem(CACHE_KEY);
-                }
-            }
 
+            try {
+                const cachedData = localStorage.getItem(CACHE_KEY);
+                if (cachedData) {
+                    const cachedPosts: Post[] = JSON.parse(cachedData);
+                    setPosts(cachedPosts.sort((a, b) => b.id - a.id));
+                    hasCache = true;
+                }
+            } catch (error) {
+                console.error("Failed to load memories from cache:", error);
+                localStorage.removeItem(CACHE_KEY);
+            }
+            
+            if (hasCache) setIsLoading(false);
             setIsSyncing(true);
+
             try {
                 const memories = await getMemories();
                 const sortedMemories = memories.sort((a, b) => b.id - a.id);
                 setPosts(sortedMemories);
                 updateCache(sortedMemories);
-                setError(null); // Clear previous errors on a successful fetch
+                setError(null);
             } catch (error) {
                 console.error("Failed to load memories from the cloud:", error);
-                // If we have no cached posts to show, display an error message.
-                // Otherwise, we can fail silently and show the cached data.
-                if (!hasCache && !isReset) {
+                if (!hasCache) {
                    setError("Failed to fetch memories. The memory wall is currently unavailable. Please check your internet connection and try again later.");
                 }
             } finally {
@@ -236,42 +245,48 @@ const MemoriesPage: React.FC = () => {
             }
         };
 
-        loadAndFetchPosts();
-    }, []);
+        if (dbStatus === 'ok') {
+            loadAndFetchPosts();
+        } else if (dbStatus === 'error') {
+            setIsLoading(false);
+            setError("Cannot fetch memories. Waiting for database connection.");
+        }
+    }, [dbStatus]);
 
-    const addPost = async (post: Omit<Post, 'id'>) => {
-        const newPost = { ...post, id: Date.now() };
-        const originalPosts = [...posts];
-      
-        const updatedPosts = [newPost, ...originalPosts].sort((a, b) => b.id - a.id);
-      
-        setPosts(updatedPosts);
-        updateCache(updatedPosts);
+    const addPost = async (postData: Omit<Post, 'id'>) => {
+        const tempId = -Date.now();
+        const tempPost: Post = { ...postData, id: tempId };
+        setPosts(currentPosts => [tempPost, ...currentPosts]);
 
         try {
-            await saveMemories(updatedPosts);
+            const savedPost = await addMemory(postData);
+            setPosts(currentPosts => {
+                const newPosts = currentPosts.map(p => p.id === tempId ? savedPost : p);
+                updateCache(newPosts);
+                return newPosts;
+            });
         } catch (error) {
             console.error("Failed to save post to cloud:", error);
-            setPosts(originalPosts);
-            updateCache(originalPosts);
+            setPosts(currentPosts => currentPosts.filter(p => p.id !== tempId));
+            if (error instanceof Error && (error.message.includes("413") || error.message.includes("too large"))) {
+              throw new Error("The uploaded image is too large. Please try a smaller file.");
+            }
             throw new Error("Failed to save your memory to the cloud. Please try again.");
         }
     };
 
     const deletePost = async (id: number) => {
       const originalPosts = [...posts];
-      
       const newPosts = posts.filter(post => post.id !== id);
       setPosts(newPosts);
-      updateCache(newPosts);
 
       try {
-        await saveMemories(newPosts);
+        await deleteMemory(id);
+        updateCache(newPosts);
       } catch(error) {
         console.error("Failed to delete memory from cloud:", error);
         alert('Could not delete the memory from the server. The memory has been restored.');
         setPosts(originalPosts);
-        updateCache(originalPosts);
       }
     };
 
@@ -326,13 +341,35 @@ const MemoriesPage: React.FC = () => {
                             </div>
                         )}
                     </div>
+
+                    <div className="mt-4 max-w-3xl mx-auto">
+                        <div className={`p-4 rounded-lg animate-fadeIn text-white transition-all duration-300 ${
+                            dbStatus === 'ok' ? 'bg-green-800/50' :
+                            dbStatus === 'checking' ? 'bg-blue-800/50' : 'bg-red-800/50'
+                        }`}>
+                            <p className="font-bold flex items-center justify-center">
+                                {dbStatus === 'ok' && <span className="w-3 h-3 bg-green-400 rounded-full mr-2"></span>}
+                                {dbStatus === 'checking' && <span className="w-3 h-3 bg-blue-400 rounded-full mr-2 animate-pulse"></span>}
+                                {dbStatus === 'error' && <span className="w-3 h-3 bg-red-400 rounded-full mr-2"></span>}
+                                Database Status: <span className="capitalize ml-1">{dbStatus}</span>
+                            </p>
+                            {dbStatus !== 'ok' && (
+                                <div className="text-center text-sm mt-2">
+                                    <p>{dbStatus === 'checking' ? 'Attempting to connect to the database...' : dbErrorMessage}</p>
+                                    {dbStatus === 'error' && <p className="text-xs mt-2 font-mono bg-black/20 p-2 rounded">Please ensure `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are set correctly in your Vercel project settings and redeploy.</p>}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                     <p className="mt-4 max-w-2xl mx-auto text-lg sm:text-xl text-white/90">
                         A collection of beautiful moments and heartfelt messages, shared by friends.
                     </p>
                     <div className="mt-6 flex justify-center gap-4">
                         <button
                             onClick={() => setIsModalOpen(true)}
-                            className="rounded-full px-8 py-3 bg-white text-gray-800 font-semibold shadow-2xl hover:scale-105 hover:bg-gray-100 transition-all duration-300"
+                            disabled={dbStatus !== 'ok'}
+                            className="rounded-full px-8 py-3 bg-white text-gray-800 font-semibold shadow-2xl hover:scale-105 hover:bg-gray-100 transition-all duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100"
                         >
                             Add Your Memory
                         </button>
@@ -347,7 +384,7 @@ const MemoriesPage: React.FC = () => {
                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                </svg>
-                               Loading memories from the cloud...
+                               Waiting for database connection...
                             </div>
                         ) : error ? (
                             <div className="text-center text-white h-full min-h-[40vh] flex flex-col justify-center items-center bg-red-900/30 rounded-2xl p-4">
@@ -367,7 +404,6 @@ const MemoriesPage: React.FC = () => {
                                     return (
                                         <div key={post.id} className={`flex w-full ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
                                             <div className="group relative bg-white rounded-xl shadow-lg overflow-hidden flex w-full md:w-5/6 lg:w-[70%] h-[9rem] transition-shadow hover:shadow-2xl">
-                                                {/* Left side: Photo */}
                                                 <div className="w-1/3 flex-shrink-0 bg-gray-200 flex items-center justify-center">
                                                     <img 
                                                         src={post.photoUrl} 
@@ -375,14 +411,10 @@ const MemoriesPage: React.FC = () => {
                                                         className="w-full h-full object-cover"
                                                     />
                                                 </div>
-
-                                                {/* Right side: Message and Author */}
                                                 <div className="w-2/3 p-4 sm:p-5 flex flex-col overflow-y-auto">
                                                     <p className="text-gray-700 text-lg leading-relaxed mb-4 flex-grow font-doodle">"{post.message}"</p>
                                                     <p className="text-right text-gray-800 font-accent text-xl mt-auto flex-shrink-0">- {post.author}</p>
                                                 </div>
-
-                                                {/* Delete Button */}
                                                 <button 
                                                     onClick={() => setPostToDelete(post)} 
                                                     className="absolute top-2 right-2 bg-red-500/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 z-10"

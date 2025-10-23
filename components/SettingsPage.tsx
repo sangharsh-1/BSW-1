@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from './Layout';
 import { useAppContext } from '../context/AppContext';
-import { saveMemories } from '../services/memoryService';
+import { resetAllMemories } from '../services/memoryService';
 
 const SettingsSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
     <div className="bg-white/60 backdrop-blur-xl p-6 rounded-2xl shadow-soft mb-8 animate-fadeIn">
@@ -22,19 +22,15 @@ const SettingsPage: React.FC = () => {
     if (window.confirm("Are you sure you want to permanently delete ALL memories? This action cannot be undone.")) {
       setIsResetting(true);
       try {
-        // Step 1: Overwrite the cloud data with an empty array.
-        // This permanently removes all post objects, which include the message, author name, and photo.
-        await saveMemories([]);
+        // Step 1: Call the new, efficient backend endpoint to clear the database.
+        await resetAllMemories();
 
-        // Step 2: Explicitly clear local cache and signal a reset via sessionStorage.
-        // This prevents a race condition where the memories page might load old, cached
-        // data before the cloud update is fully propagated.
-        localStorage.setItem('memoriesCache', '[]');
-        sessionStorage.setItem('memoriesReset', 'true');
+        // Step 2: Clear the local cache to ensure the UI reflects the empty state.
+        localStorage.removeItem('memoriesCache');
         
         alert("All memories have been successfully cleared. Redirecting to the Memory Wall...");
         
-        // Step 3: Navigate back to the memory wall to show the result of the empty wall.
+        // Step 3: Navigate to the memory wall to show the now-empty wall.
         navigateWithTransition('/memories');
       } catch (error) {
         console.error("Failed to reset memories:", error);
