@@ -5,7 +5,6 @@
   "private": true,
   "scripts": {
     "dev": "vercel dev",
-    "build": "[my-framework] build --output public",
     "deploy": "vercel --prod"
   },
   "dependencies": {
