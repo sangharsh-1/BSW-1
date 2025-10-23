@@ -19,4 +19,7 @@
     "typescript": "^5.5.3",
     "vercel": "^35.2.1"
   }
+  "scripts": {
+    "build": "[my-framework] build --output public"
+  }
 }
